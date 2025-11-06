@@ -57,7 +57,7 @@ CLASSIFIER_PATH = "./ml/models/win_classifier_final.pkl"
 REGRESSOR_PATH = "./ml/models/profit_regressor_final.pkl"
 SEED = 42
 REQUIRED_COLS = ["bid_amount", "base_price", "quality_score", "won"]
-FEATURES = ["bid_amount", "base_price", "quality_score"]
+FEATURES = ["rel_markup", "quality_score"]
 TARGET_CLASS = "won"
 TARGET_PROFIT = "profit_if_won"
 
@@ -79,27 +79,27 @@ def safe_print(*args, **kwargs):
 
 def load_dataset(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
+
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
     df = df.copy()
-    # coerce numeric
     for c in ["bid_amount", "base_price", "quality_score"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
     df[TARGET_CLASS] = pd.to_numeric(df[TARGET_CLASS], errors="coerce").fillna(0).astype(int)
 
-    # drop rows missing core values
     df = df.dropna(subset=["bid_amount", "base_price", "quality_score", TARGET_CLASS])
 
-    # profit definition: exactly as requested
+    # ✅ MUST BE HERE
     df[TARGET_PROFIT] = df["bid_amount"] - df["base_price"]
 
-    if df.empty:
-        raise ValueError("No data left after cleaning. Check CSV contents.")
+    # ✅ ADD RELATIVE FEATURE
+    df["rel_markup"] = (df["bid_amount"] - df["base_price"]) / df["base_price"]
 
     return df
+
 
 
 def make_synthetic_small_dataset(n=200, seed=SEED) -> pd.DataFrame:
@@ -122,8 +122,11 @@ def make_synthetic_small_dataset(n=200, seed=SEED) -> pd.DataFrame:
         "quality_score": q,
         "won": wins,
     })
+
     df[TARGET_PROFIT] = df["bid_amount"] - df["base_price"]
+    df["rel_markup"] = (df["bid_amount"] - df["base_price"]) / df["base_price"]
     return df
+
 
 
 # -----------------------------
@@ -219,7 +222,9 @@ def train_models(
         df = random_oversample(df, TARGET_CLASS, ratio=oversample_ratio, seed=random_state)
         safe_print(f"After oversampling: n={len(df)}, wins={df['won'].sum()} (ratio={df['won'].mean():.3f})")
 
-    X = df[FEATURES]
+    df["rel_markup"] = (df["bid_amount"] - df["base_price"]) / df["base_price"]
+    X = df[["rel_markup", "quality_score"]]
+
     y_clf = df[TARGET_CLASS]
     y_reg = df[TARGET_PROFIT]
 
@@ -281,13 +286,17 @@ def load_models() -> Tuple[Pipeline, Pipeline]:
 
 
 def predict_win_prob_single(clf_pipe: Pipeline, bid_amount: float, base_price: float, quality_score: float) -> float:
-    X = pd.DataFrame([{"bid_amount": bid_amount, "base_price": base_price, "quality_score": quality_score}])
+    rel_markup = (bid_amount - base_price) / base_price
+    X = pd.DataFrame([{"rel_markup": rel_markup, "quality_score": quality_score}])
     return float(predict_win_prob_safe(clf_pipe, X)[0])
 
 
+
 def predict_profit_if_won_single(reg_pipe: Pipeline, bid_amount: float, base_price: float, quality_score: float) -> float:
-    X = pd.DataFrame([{"bid_amount": bid_amount, "base_price": base_price, "quality_score": quality_score}])
+    rel_markup = (bid_amount - base_price) / base_price
+    X = pd.DataFrame([{"rel_markup": rel_markup, "quality_score": quality_score}])
     return float(reg_pipe.predict(X)[0])
+
 
 
 def optimize_bid(

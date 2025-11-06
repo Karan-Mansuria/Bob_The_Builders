@@ -2,24 +2,38 @@ import joblib
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
+from pathlib import Path
 
 # -----------------------
 # Load pre-trained models
 # -----------------------
-CLASSIFIER_PATH = "models/win_classifier_final.pkl"
-REGRESSOR_PATH  = "models/profit_regressor_final.pkl"
+# Use absolute path based on this file's location
+ML_DIR = Path(__file__).resolve().parent
+MODELS_DIR = ML_DIR / "models"
+CLASSIFIER_PATH = MODELS_DIR / "win_classifier_final.pkl"
+REGRESSOR_PATH  = MODELS_DIR / "profit_regressor_final.pkl"
 
-clf_pipe = joblib.load(CLASSIFIER_PATH)
-reg_pipe = joblib.load(REGRESSOR_PATH)
+# Only load models if they exist (for when used as standalone script)
+# When imported by backend, models will be loaded separately
+try:
+    if CLASSIFIER_PATH.exists() and REGRESSOR_PATH.exists():
+        clf_pipe = joblib.load(str(CLASSIFIER_PATH))
+        reg_pipe = joblib.load(str(REGRESSOR_PATH))
+    else:
+        clf_pipe = None
+        reg_pipe = None
+except Exception:
+    clf_pipe = None
+    reg_pipe = None
 
 
 # -----------------------
 # Helper prediction funcs
 # -----------------------
 def predict_win_prob_single(clf_pipe, bid_amount, base_price, quality_score):
+    rel_markup = (bid_amount - base_price) / base_price
     X = pd.DataFrame([{
-        "bid_amount": bid_amount,
-        "base_price": base_price,
+        "rel_markup": rel_markup,
         "quality_score": quality_score,
     }])
     try:
@@ -28,13 +42,15 @@ def predict_win_prob_single(clf_pipe, bid_amount, base_price, quality_score):
         return float(clf_pipe.predict(X)[0])
 
 
+
 def predict_profit_if_won_single(reg_pipe, bid_amount, base_price, quality_score):
+    rel_markup = (bid_amount - base_price) / base_price
     X = pd.DataFrame([{
-        "bid_amount": bid_amount,
-        "base_price": base_price,
+        "rel_markup": rel_markup,
         "quality_score": quality_score,
     }])
     return float(reg_pipe.predict(X)[0])
+
 
 
 # -------------------------------------------------------------
@@ -152,8 +168,12 @@ def optimize_bid(
 # Example
 # -----------------------
 if __name__ == "__main__":
-    base_price = 100000
-    quality = 0.72
+    if clf_pipe is None or reg_pipe is None:
+        print("Error: Models not loaded. Please ensure model files exist in ml/models/")
+        exit(1)
+    
+    base_price = 5792463.004
+    quality = 0.5
 
     result = optimize_bid(
         clf_pipe,
