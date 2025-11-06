@@ -1,0 +1,8 @@
+python3 ml/bid_optimization_pipeline_from_scratch.py --csv dataset.csv --opt_base 100000 --opt_quality 0.72 --auto_expand --use_profit_formula
+
+
+and
+
+
+
+python3 ml/data_synthesizer.py --n 10000 --outfile dataset.csv --seed 919839423
